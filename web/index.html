@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bilibili-dl</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #60a5fa; }
+
+    select option { background: #ffffff; color: #0f172a; }
+
+    .nav-btn { transition: background 0.12s, color 0.12s; }
+    .progress-bar { transition: width 0.3s ease; }
+
+    textarea { line-height: 1.6; }
+
+    /* Loading overlay — visible before pywebviewready, pure CSS (no Tailwind CDN needed) */
+    #init-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #f6f7fb;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px;
+      transition: opacity 0.3s ease;
+    }
+    #init-overlay.fade-out { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #bfdbfe;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .init-text {
+      color: #475569;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+    }
+    .init-sub {
+      color: #94a3b8;
+      font-size: 11px;
+      margin-top: -12px;
+    }
+  </style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-800 flex h-screen overflow-hidden select-none" style="font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;">
+
+  <!-- ══ Init overlay (hidden after pywebviewready) ════════ -->
+  <div id="init-overlay">
+    <div class="spinner"></div>
+    <p class="init-text">初始化中...</p>
+    <p class="init-sub">正在启动 bilibili-dl</p>
+  </div>
+
+  <!-- ══ Sidebar ══════════════════════════════════════════ -->
+  <aside id="sidebar" class="w-16 bg-white flex flex-col border-r border-slate-200 shrink-0 transition-all duration-200">
+    <!-- Logo -->
+    <div class="h-13 flex items-center justify-between px-3 py-4 border-b border-slate-200">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center text-xs font-bold text-white">B</div>
+        <span id="sidebar-title" class="hidden text-sm font-semibold text-slate-900 tracking-wide truncate">bilibili-dl</span>
+      </div>
+      <button id="btn-sidebar-toggle" onclick="toggleSidebar()" title="展开侧边栏"
+        class="w-7 h-7 shrink-0 rounded-md border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-slate-900 transition-colors flex items-center justify-center">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 px-2 py-3 space-y-0.5">
+      <button id="nav-0" onclick="switchPage(0)"
+        class="nav-btn w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white" title="下载">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        <span class="sidebar-label hidden">下载</span>
+      </button>
+      <button id="nav-1" onclick="switchPage(1)"
+        class="nav-btn w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-slate-900" title="设置">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="sidebar-label hidden">设置</span>
+      </button>
+    </nav>
+
+    <!-- Bottom version -->
+    <div class="px-4 py-3 border-t border-slate-200">
+      <p id="sidebar-version" class="hidden text-xs text-slate-400">yt-dlp · Whisper</p>
+    </div>
+  </aside>
+
+  <!-- ══ Main area ═════════════════════════════════════════ -->
+  <div class="flex-1 overflow-hidden flex flex-col min-w-0">
+
+    <!-- ── Download page ─────────────────────────────────── -->
+    <div id="page-0" class="flex-1 overflow-hidden flex gap-4 p-4 min-h-0">
+
+      <!-- Download panel -->
+      <div class="flex-1 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden min-w-0 shadow-sm">
+        <!-- Panel header -->
+        <div class="h-14 px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+          <h2 class="text-sm font-semibold text-slate-900">下载</h2>
+        </div>
+
+        <!-- Top: URL + cover + metadata (fixed height) -->
+        <div class="px-5 pt-4 pb-3 flex flex-col gap-3">
+
+          <!-- URL row -->
+          <div class="flex gap-2">
+            <input id="url-input" type="text" autocomplete="off" spellcheck="false"
+              placeholder="粘贴 B 站视频链接，按 Enter 开始..."
+              class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+              onkeydown="if(event.key==='Enter') startDownload()">
+            <button id="btn-clear-url" type="button" onclick="clearUrlInput()"
+              class="px-2.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-700 rounded-lg transition-colors"
+              title="清空链接" aria-label="清空链接">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+            <button id="btn-download" onclick="startDownload()"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600">
+              开始下载
+            </button>
+          </div>
+
+          <div class="h-px bg-slate-200/70"></div>
+
+          <!-- Cover — single full-width row, height +50% (99→148px) -->
+          <div id="cover-wrap" class="w-full h-[148px] bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
+            <span id="cover-placeholder" class="text-xs text-slate-400">封面预览</span>
+            <img id="cover-img" class="hidden w-full h-full object-cover" alt="封面">
+          </div>
+
+          <!-- Text metadata (text-xs, one size smaller) -->
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-start gap-2">
+              <span class="text-[11px] text-slate-500 shrink-0 w-9 text-right pt-px">标题</span>
+              <span id="meta-title" class="text-xs text-slate-800 leading-snug min-w-0 break-words">—</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-slate-500 shrink-0 w-9 text-right">UP 主</span>
+              <span id="meta-uploader" class="text-xs text-slate-800 truncate">—</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-slate-500 shrink-0 w-9 text-right">时长</span>
+              <span id="meta-duration" class="text-xs text-slate-800">—</span>
+            </div>
+            <div id="link-container" class="hidden flex items-center gap-2">
+              <span class="text-[11px] text-slate-500 shrink-0 w-9 text-right">链接</span>
+              <a id="video-link" href="#" onclick="return false;"
+                class="text-[11px] text-blue-600 hover:text-blue-500 truncate transition-colors"></a>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Description — fills remaining space -->
+        <div class="flex-1 flex flex-col min-h-0 px-5 pb-3 gap-1.5">
+          <p class="text-[11px] text-slate-500 font-medium">简介</p>
+          <textarea id="txt-desc" readonly placeholder="视频简介"
+            class="flex-1 min-h-0 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 placeholder-slate-400 resize-none focus:outline-none"></textarea>
+        </div>
+
+        <!-- Status bar — fixed at bottom -->
+        <div class="px-5 pb-4 pt-2 border-t border-slate-200 space-y-2">
+          <div id="dl-progress-wrap" class="hidden">
+            <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+              <div id="dl-progress-bar" class="progress-bar bg-blue-500 h-full rounded-full" style="width:0%"></div>
+            </div>
+          </div>
+          <p id="dl-status" class="text-xs text-slate-500">就绪</p>
+        </div>
+
+      </div>
+
+      <!-- Transcribe panel -->
+      <div class="flex-1 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden min-w-0 shadow-sm">
+        <!-- Panel header -->
+        <div class="h-14 px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-violet-500"></div>
+          <h2 class="text-sm font-semibold text-slate-900 flex-1">语音转文字</h2>
+          <!-- Copy button -->
+          <button id="btn-copy" onclick="copyText()" disabled
+            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs text-white font-medium rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            复制文本
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-hidden px-5 py-4 flex flex-col gap-3 min-h-0">
+          <!-- Status + progress -->
+          <div class="space-y-2">
+            <p id="tr-status" class="text-xs text-slate-500">等待下载完成...</p>
+            <div id="tr-progress-wrap" class="hidden">
+              <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div id="tr-progress-bar" class="progress-bar bg-violet-500 h-full rounded-full" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="h-px bg-slate-200/70"></div>
+
+          <!-- Result text area -->
+          <div class="flex-1 flex flex-col gap-1.5 min-h-0">
+            <p class="text-xs text-slate-500 font-medium">转录结果</p>
+            <textarea id="txt-result" readonly
+              placeholder="转录完成后，识别的文字将显示在这里...&#10;&#10;支持复制全文或导出为 TXT / SRT 格式。"
+              class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none min-h-0 select-text"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Settings page ──────────────────────────────────── -->
+    <div id="page-1" class="hidden flex-1 overflow-auto p-6">
+      <div class="max-w-xl">
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <div class="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-slate-500"></div>
+            <h2 class="text-sm font-semibold text-slate-900">设置</h2>
+          </div>
+
+          <div class="px-6 py-5 space-y-4">
+
+            <!-- Whisper model -->
+            <div class="flex items-center gap-4">
+              <label class="text-sm text-slate-600 w-24 text-right shrink-0">Whisper 模型</label>
+              <select id="sel-model"
+                class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer">
+              </select>
+            </div>
+
+            <!-- Language -->
+            <div class="flex items-center gap-4">
+              <label class="text-sm text-slate-600 w-24 text-right shrink-0">识别语言</label>
+              <select id="sel-lang"
+                class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="auto">自动检测</option>
+              </select>
+            </div>
+
+            <!-- Output dir -->
+            <div class="flex items-center gap-4">
+              <label class="text-sm text-slate-600 w-24 text-right shrink-0">输出目录</label>
+              <div class="flex-1 flex gap-2">
+                <input id="txt-output" type="text" readonly
+                  class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none cursor-default min-w-0">
+                <button onclick="browseDir()"
+                  class="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-sm text-slate-700 rounded-lg transition-colors whitespace-nowrap">
+                  浏览...
+                </button>
+              </div>
+            </div>
+
+            <!-- Auto transcribe -->
+            <div class="flex items-center gap-4">
+              <label class="text-sm text-slate-600 w-24 text-right shrink-0">自动转录</label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <div class="relative">
+                  <input id="chk-auto" type="checkbox" class="sr-only peer" checked>
+                  <div class="w-9 h-5 bg-slate-200 peer-checked:bg-blue-600 rounded-full transition-colors"></div>
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4"></div>
+                </div>
+                <span class="text-sm text-slate-700">下载完成后自动开始转录</span>
+              </label>
+            </div>
+
+            <!-- Cookies -->
+            <div class="flex items-center gap-4">
+              <label class="text-sm text-slate-600 w-24 text-right shrink-0">Cookies 文件</label>
+              <div class="flex-1 flex gap-2">
+                <input id="txt-cookies" type="text" placeholder="可选，大会员视频需要"
+                  class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors min-w-0">
+                <button onclick="browseCookies()"
+                  class="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-sm text-slate-700 rounded-lg transition-colors whitespace-nowrap">
+                  浏览...
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
+            <button onclick="saveSettings()"
+              class="px-5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+              保存所有设置
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end main -->
+
+  <!-- ══ Model download modal ══════════════════════════════ -->
+  <div id="model-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 w-[460px] shadow-2xl shadow-black/20">
+      <div class="flex items-center gap-3 mb-1">
+        <div class="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+          <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+          </svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-900">未检测到 Whisper 模型</h3>
+      </div>
+
+      <div class="h-px bg-slate-200/70 my-4"></div>
+
+      <p id="modal-desc" class="text-sm text-slate-600 leading-relaxed mb-4"></p>
+
+      <!-- Download progress -->
+      <div id="modal-progress-wrap" class="hidden mb-4 space-y-2">
+        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+          <div id="modal-progress-bar" class="progress-bar bg-blue-500 h-full rounded-full" style="width:0%"></div>
+        </div>
+        <p id="modal-dl-status" class="text-xs text-slate-500"></p>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button id="btn-modal-exit" onclick="pyExit()"
+          class="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-sm text-slate-700 rounded-lg transition-colors">
+          退出程序
+        </button>
+        <button id="btn-modal-dl" onclick="startModelDownload()"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          立即下载
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Toast ═════════════════════════════════════════════ -->
+  <div id="toast"
+    class="hidden fixed bottom-5 right-5 bg-white border border-slate-200 text-sm text-slate-800 px-4 py-2.5 rounded-xl shadow-xl z-50 pointer-events-none"></div>
+
+  <!-- ══ JavaScript ════════════════════════════════════════ -->
+  <script>
+    // ── State ─────────────────────────────────────────────
+    let _modelName = 'base';
+    let _toastTimer = null;
+    let _activePage = 0;
+    let _sidebarCollapsed = true;
+
+    // ── Startup ───────────────────────────────────────────
+    window.addEventListener('pywebviewready', async () => {
+      const s = await window.pywebview.api.check_startup();
+      _modelName = s.model_name;
+      loadSettings(s.config);
+      await populateModelSelect(s.config.model);
+
+      // Hide loading overlay
+      const overlay = document.getElementById('init-overlay');
+      overlay.classList.add('fade-out');
+      setTimeout(() => overlay.remove(), 320);
+
+      if (!s.model_ready) showModelModal(s.model_name, s.config);
+    });
+
+    // ── Navigation ────────────────────────────────────────
+    function _navClass(isActive) {
+      const color = isActive
+        ? 'bg-blue-600 text-white'
+        : 'text-slate-600 hover:bg-blue-50 hover:text-slate-900';
+      const layout = _sidebarCollapsed
+        ? 'justify-center px-2'
+        : 'gap-2.5 px-3';
+      return `nav-btn w-full flex items-center ${layout} py-2.5 rounded-lg text-sm font-medium ${color}`;
+    }
+
+    function applySidebarState() {
+      const sidebar = document.getElementById('sidebar');
+      const title = document.getElementById('sidebar-title');
+      const version = document.getElementById('sidebar-version');
+      const toggleBtn = document.getElementById('btn-sidebar-toggle');
+      sidebar.classList.toggle('w-16', _sidebarCollapsed);
+      sidebar.classList.toggle('w-56', !_sidebarCollapsed);
+      title.classList.toggle('hidden', _sidebarCollapsed);
+      version.classList.toggle('hidden', _sidebarCollapsed);
+      for (const label of document.querySelectorAll('.sidebar-label')) {
+        label.classList.toggle('hidden', _sidebarCollapsed);
+      }
+      toggleBtn.title = _sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏';
+      for (let i = 0; i < 2; i++) {
+        const nav = document.getElementById(`nav-${i}`);
+        nav.className = _navClass(i === _activePage);
+      }
+    }
+
+    function toggleSidebar() {
+      _sidebarCollapsed = !_sidebarCollapsed;
+      applySidebarState();
+    }
+
+    function switchPage(idx) {
+      _activePage = idx;
+      for (let i = 0; i < 2; i++) {
+        const page = document.getElementById(`page-${i}`);
+        const nav  = document.getElementById(`nav-${i}`);
+        if (i === idx) {
+          page.classList.remove('hidden');
+          nav.className = _navClass(true);
+        } else {
+          page.classList.add('hidden');
+          nav.className = _navClass(false);
+        }
+      }
+    }
+    applySidebarState();
+
+    // ── Download ──────────────────────────────────────────
+    function clearUrlInput() {
+      const el = document.getElementById('url-input');
+      el.value = '';
+      el.focus();
+    }
+
+    async function startDownload() {
+      const url = document.getElementById('url-input').value.trim();
+      if (!url) return;
+
+      document.getElementById('btn-download').disabled = true;
+      setDlStatus('获取视频信息中...', '');
+
+      // Reset UI
+      document.getElementById('meta-title').textContent    = '—';
+      document.getElementById('meta-uploader').textContent = '—';
+      document.getElementById('meta-duration').textContent = '—';
+      document.getElementById('txt-desc').value = '';
+      document.getElementById('link-container').classList.add('hidden');
+      document.getElementById('cover-placeholder').classList.remove('hidden');
+      document.getElementById('cover-img').classList.add('hidden');
+      document.getElementById('dl-progress-wrap').classList.add('hidden');
+      document.getElementById('dl-progress-bar').style.width = '0%';
+      resetTranscribePanel();
+
+      await window.pywebview.api.start_download(url);
+    }
+
+    // Python → JS callbacks
+    function onMeta(meta) {
+      document.getElementById('meta-title').textContent    = meta.title    || '—';
+      document.getElementById('meta-uploader').textContent = meta.uploader || '—';
+      document.getElementById('meta-duration').textContent = fmtDuration(meta.duration || 0);
+      document.getElementById('txt-desc').value            = meta.description || '';
+      if (meta.webpage_url) {
+        const a = document.getElementById('video-link');
+        a.textContent = meta.webpage_url;
+        a.href = meta.webpage_url;
+        document.getElementById('link-container').classList.remove('hidden');
+      }
+    }
+
+    function onThumbnail(dataUrl) {
+      document.getElementById('cover-img').src = dataUrl;
+      document.getElementById('cover-img').classList.remove('hidden');
+      document.getElementById('cover-placeholder').classList.add('hidden');
+    }
+
+    function onDownloadProgress(percent, speed) {
+      document.getElementById('dl-progress-wrap').classList.remove('hidden');
+      document.getElementById('dl-progress-bar').style.width = percent + '%';
+      setDlStatus(`下载中  ${speed}`, '');
+    }
+
+    function onDownloadFinished(videoPath) {
+      document.getElementById('btn-download').disabled = false;
+      document.getElementById('dl-progress-wrap').classList.add('hidden');
+      setDlStatus('下载完成 ✓', 'ok');
+    }
+
+    function onDownloadError(msg) {
+      document.getElementById('btn-download').disabled = false;
+      document.getElementById('dl-progress-wrap').classList.add('hidden');
+      setDlStatus('下载失败', 'error');
+      setTrStatus('下载失败，无法转录', 'error');
+      showToast('下载失败：' + msg);
+    }
+
+    // ── Auto-transcribe bridge ────────────────────────────
+    function onAutoTranscribeBegin() {
+      setTrStatus('提取音频中...', '');
+      document.getElementById('tr-progress-wrap').classList.remove('hidden');
+    }
+
+    // ── Transcribe callbacks ──────────────────────────────
+    function onTranscribeProgress(percent) {
+      document.getElementById('tr-progress-wrap').classList.remove('hidden');
+      document.getElementById('tr-progress-bar').style.width = percent + '%';
+      setTrStatus(`转录中  ${percent}%`, '');
+    }
+
+    function onTranscribeResult(text, srtPath) {
+      document.getElementById('txt-result').value = text;
+      document.getElementById('tr-progress-bar').style.width = '100%';
+      setTrStatus('转录完成 ✓', 'ok');
+      document.getElementById('btn-copy').disabled = false;
+    }
+
+    function onTranscribeError(msg) {
+      setTrStatus('转录失败', 'error');
+      showToast('转录失败：' + msg);
+    }
+
+    function resetTranscribePanel() {
+      setTrStatus('等待下载完成...', '');
+      document.getElementById('txt-result').value = '';
+      document.getElementById('tr-progress-wrap').classList.add('hidden');
+      document.getElementById('tr-progress-bar').style.width = '0%';
+      document.getElementById('btn-copy').disabled = true;
+    }
+
+    // ── Export ────────────────────────────────────────────
+    async function copyText() {
+      const text = document.getElementById('txt-result').value;
+      try { await navigator.clipboard.writeText(text); } catch {}
+      showToast('已复制到剪贴板');
+    }
+
+    // ── Settings ──────────────────────────────────────────
+    function loadSettings(cfg) {
+      document.getElementById('txt-output').value = cfg.output_dir || '';
+      document.getElementById('chk-auto').checked  = cfg.auto_transcribe !== false;
+      document.getElementById('txt-cookies').value = cfg.cookies || '';
+      const selLang = document.getElementById('sel-lang');
+      for (let i = 0; i < selLang.options.length; i++) {
+        if (selLang.options[i].value === cfg.language) { selLang.selectedIndex = i; break; }
+      }
+    }
+
+    async function populateModelSelect(currentModel) {
+      const info = await window.pywebview.api.get_models_info();
+      const sel = document.getElementById('sel-model');
+      sel.innerHTML = '';
+      for (const [name, data] of Object.entries(info)) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = `${name}  ·  ${data.size}  ·  ${data.speed}  ${data.downloaded ? '✓ 已下载' : '· 未下载'}`;
+        if (name === currentModel) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    async function saveSettings() {
+      const cfg = {
+        model:           document.getElementById('sel-model').value,
+        language:        document.getElementById('sel-lang').value,
+        output_dir:      document.getElementById('txt-output').value,
+        auto_transcribe: document.getElementById('chk-auto').checked,
+        cookies:         document.getElementById('txt-cookies').value.trim(),
+      };
+      await window.pywebview.api.save_config(cfg);
+      showToast('设置已保存');
+    }
+
+    async function browseDir() {
+      const path = await window.pywebview.api.browse_directory();
+      if (path) document.getElementById('txt-output').value = path;
+    }
+
+    async function browseCookies() {
+      const path = await window.pywebview.api.browse_file();
+      if (path) document.getElementById('txt-cookies').value = path;
+    }
+
+    // ── Model modal ───────────────────────────────────────
+    function showModelModal(modelName) {
+      document.getElementById('modal-desc').innerHTML =
+        `当前配置模型：<strong class="text-blue-600">${modelName}</strong><br><br>` +
+        `语音转文字功能需要本地 Whisper 模型才能运行，是否立即下载到 Models/ 目录？`;
+      document.getElementById('model-modal').classList.remove('hidden');
+    }
+
+    async function startModelDownload() {
+      document.getElementById('btn-modal-dl').disabled    = true;
+      document.getElementById('btn-modal-dl').textContent = '下载中...';
+      document.getElementById('btn-modal-exit').disabled  = true;
+      document.getElementById('modal-progress-wrap').classList.remove('hidden');
+      document.getElementById('modal-dl-status').textContent = '正在连接...';
+      await window.pywebview.api.start_model_download(_modelName);
+    }
+
+    function onModelProgress(percent, speed) {
+      document.getElementById('modal-progress-bar').style.width = percent + '%';
+      document.getElementById('modal-dl-status').textContent    = `正在下载  ·  ${speed}`;
+    }
+
+    function onModelDownloadDone() {
+      document.getElementById('model-modal').classList.add('hidden');
+      showToast('模型下载完成 ✓');
+    }
+
+    function onModelError(msg) {
+      const btn = document.getElementById('btn-modal-dl');
+      btn.disabled    = false;
+      btn.textContent = '重试';
+      document.getElementById('btn-modal-exit').disabled = false;
+      const st = document.getElementById('modal-dl-status');
+      st.textContent  = `下载失败：${msg}`;
+      st.className    = 'text-xs text-red-600';
+    }
+
+    async function pyExit() {
+      await window.pywebview.api.quit();
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function setDlStatus(msg, type) {
+      const el = document.getElementById('dl-status');
+      el.textContent = msg;
+      el.className = type === 'ok'    ? 'text-xs text-green-600'
+                   : type === 'error' ? 'text-xs text-red-600'
+                   : 'text-xs text-slate-500';
+    }
+
+    function setTrStatus(msg, type) {
+      const el = document.getElementById('tr-status');
+      el.textContent = msg;
+      el.className = type === 'ok'    ? 'text-xs text-green-600'
+                   : type === 'error' ? 'text-xs text-red-600'
+                   : 'text-xs text-slate-500';
+    }
+
+    function fmtDuration(s) {
+      if (!s) return '—';
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = Math.floor(s % 60);
+      const mm  = String(m).padStart(2, '0');
+      const ss  = String(sec).padStart(2, '0');
+      return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => el.classList.add('hidden'), 2800);
+    }
+  </script>
+</body>
+</html>
